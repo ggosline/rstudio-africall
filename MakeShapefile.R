@@ -1,6 +1,8 @@
 require(sf)
 require(data.table)
 require(rnaturalearth)
+require(leaflet)
+require(htmltools)
 countries <- rnaturalearth::ne_countries('large')
 countries <- st_as_sf(countries)
 land <- rnaturalearth::ne_download(scale=10, type='land', category='physical')
@@ -21,12 +23,9 @@ NAcountry[,'countryCode'] <- pttocountry[,'iso_a3']
 AfricaAll[NAcountry$id,countryCode := NAcountry$countryCode]
 
 NAspecs <- st_as_sf(NAspecs, coords=c('decimalLongitude','decimalLatitude'), crs=4326, agr="constant")
+AcanthAll <- AfricaAll[AfricaAll$family == 'Acanthaceae',]
 
-
-
-WGScoor<-  AfricaAll #data to convert
-coordinates(WGScoor)=~decimalLongitude+decimalLatitude #column names of the lat long cols
-proj4string(WGScoor)<- crs("++proj=longlat +datum=WGS84") # set coordinate system to WGS
-
-WGScoor.df <- SpatialPointsDataFrame(WGScoor, data.frame(id=1:length(WGScoor), AfricaAll))
-raster::shapefile(WGScoor.df, "T:/Cameroon/RainBio/AfricaAllshp/AfricaAll.shp", overwrite=TRUE )
+m <- leaflet(AcanthAll[1:10,]) %>% addTiles() %>% addMarkers(clusterOptions = markerClusterOptions(),
+popup = ~((sprintf(
+"<div><strong>%s</strong><br/>%s %s <br/> %s</div>",
+species, recordedby, recordnumber, eventdate))))
