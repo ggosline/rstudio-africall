@@ -2,30 +2,46 @@
 library(shiny)
 library(leaflet)
 library(leaflet.extras)
+library(shinyTree)
 library(sf)
 library(sp)
 library(mapedit)
 
 #AcanthAll <- SpatialPointsDataFrame(AcanthAll[,c("Longitude","Latitude")],AcanthAll)
+speciesnames <- AcanthAll %>% group_by(genus, species) %>% count()
+specieslist <- split(speciesnames, speciesnames$genus)
+
+spll <- mapply(function(z){mapply(function(x,y) { y }, z[[2]], z[[3]], SIMPLIFY = FALSE,USE.NAMES = TRUE)},specieslist,USE.NAMES = T)
 
 ui <- fluidPage(
-  leafletOutput("mymap"),
-  textOutput("selected_points")
+  titlePanel("Acanthaceae of Africa"),
+  
+  sidebarLayout(
+    # sidebarPanel(selectInput("selectedspecies", "Species:",specieslist), multiple=TRUE),
+    sidebarPanel(shinyTree('speciesselect',checkbox = T)),
+    mainPanel(leafletOutput("mymap"))
+  
+  )
 )
-
 
 server <- function(input, output, session) {
   
+  output$speciesselect <- renderTree(spll)
+  
   output$mymap <- renderLeaflet({
-    leaflet(AcanthAll) %>% addTiles() %>% 
+    
+    leaflet(filter(AcanthAll,species %in% get_selected(input$speciesselect))) %>% addTiles() %>% 
+              
     addMarkers(label = ~species,
                clusterOptions = markerClusterOptions()) %>%
+      
     addDrawToolbar(
       targetGroup='select',
       polylineOptions=FALSE,
       markerOptions = FALSE,
       circleOptions = TRUE,
       singleFeature = TRUE) %>%
+      
     addLayersControl(overlayGroups = c('select'), options =
                        layersControlOptions(collapsed=FALSE)) 
 
