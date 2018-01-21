@@ -11,7 +11,7 @@ land <- st_as_sf(land)
 
 drv <- dbDriver("PostgreSQL")
 con <- dbConnect(drv, host ='kewwta.chh53kepvixq.eu-west-2.rds.amazonaws.com', port=1433, dbname='Rainbio', user='ggosline', password ='Uvariops1s')
-AfricaAll <- st_read_db(con, 'africaall')
+AfricaAll <- s1t_read_db(con, 'africaall')
 dbDisconnect(con)
 
 AfricaAll <- as.data.table(AfricaAll)

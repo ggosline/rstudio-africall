@@ -5,7 +5,8 @@ library(leaflet.extras)
 library(shinyTree)
 library(sf)
 library(sp)
-library(mapedit)
+library(dplyr)
+#library(mapedit)
 
 #AcanthAll <- SpatialPointsDataFrame(AcanthAll[,c("Longitude","Latitude")],AcanthAll)
 speciesnames <- AcanthAll %>% group_by(genus, species) %>% count()
@@ -18,9 +19,16 @@ ui <- fluidPage(
   
   sidebarLayout(
     # sidebarPanel(selectInput("selectedspecies", "Species:",specieslist), multiple=TRUE),
-    sidebarPanel(shinyTree('speciesselect',checkbox = T)),
-    mainPanel(leafletOutput("mymap"))
-  
+    sidebarPanel(
+      checkboxInput("clusterpts", label="Cluster Points", value=TRUE),
+      checkboxInput("showallspecs", label="Select taxa", value=FALSE),
+      conditionalPanel(condition=TRUE, # "input.showallspecs",
+        shinyTree('speciesselect',checkbox = TRUE))
+      ),
+    mainPanel(leafletOutput("mymap", width="100%"),
+              textOutput("specieslist")
+              )
+    
   )
 )
 
@@ -28,26 +36,36 @@ server <- function(input, output, session) {
   
   output$speciesselect <- renderTree(spll)
   
+  specimens <- reactive({
+              if (!input$showallspecs) AcanthAll
+              else AcanthAll[AcanthAll$species %in% get_selected(input$speciesselect,format="names"),]
+            })
+                     
+  
+  observe({
+    leafletProxy("mymap") %>% clearMarkerClusters() %>%
+                              addMarkers(data = specimens(), label = ~species,
+                                                      clusterOptions = markerClusterOptions())
+  })
+  
   output$mymap <- renderLeaflet({
     
-    leaflet(filter(AcanthAll,species %in% get_selected(input$speciesselect))) %>% addTiles() %>% 
-              
-    addMarkers(label = ~species,
-               clusterOptions = markerClusterOptions()) %>%
-      
-    addDrawToolbar(
-      targetGroup='select',
-      polylineOptions=FALSE,
-      markerOptions = FALSE,
-      circleOptions = TRUE,
-      singleFeature = TRUE) %>%
+    leaflet(AcanthAll) %>% addTiles() %>% 
+      addMarkers(label = ~species,
+                 clusterOptions = markerClusterOptions()) %>%  
+      addDrawToolbar(
+        targetGroup='select',
+        polylineOptions=FALSE,
+        markerOptions = FALSE,
+        circleOptions = TRUE,
+        singleFeature = TRUE) %>%
       
     addLayersControl(overlayGroups = c('select'), options =
                        layersControlOptions(collapsed=FALSE)) 
 
   })
   
-  output$selected_points <- renderText({
+  output$specieslist <- renderText({
 
     #use the draw_stop event to detect when users finished drawing
     req(input$mymap_draw_stop)
@@ -59,7 +77,7 @@ server <- function(input, output, session) {
       #get the coordinates of the polygon
       polygon_coordinates <- input$mymap_draw_new_feature$geometry$coordinates[[1]]
 
-      #transform them to an sp Polygon
+      #transform them to an sf Polygon
       drawn_polygon <- st_sf(1, st_sfc(st_polygon(list(matrix(unlist(polygon_coordinates),ncol=2,byrow=TRUE)))))
       st_crs(drawn_polygon) <- st_crs(AcanthAll)
 
