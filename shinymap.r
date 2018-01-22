@@ -6,7 +6,10 @@ library(shinyTree)
 library(sf)
 library(sp)
 library(dplyr)
+library(DT)
+library(data.table)
 #library(mapedit)
+
 
 #AcanthAll <- SpatialPointsDataFrame(AcanthAll[,c("Longitude","Latitude")],AcanthAll)
 speciesnames <- AcanthAll %>% group_by(genus, species) %>% count()
@@ -22,11 +25,11 @@ ui <- fluidPage(
     sidebarPanel(
       checkboxInput("clusterpts", label="Cluster Points", value=TRUE),
       checkboxInput("showallspecs", label="Select taxa", value=FALSE),
-      conditionalPanel(condition=TRUE, # "input.showallspecs",
+      conditionalPanel(condition = "input.showallspecs",
         shinyTree('speciesselect',checkbox = TRUE))
       ),
     mainPanel(leafletOutput("mymap", width="100%"),
-              textOutput("specieslist")
+              dataTableOutput("specieslist")
               )
     
   )
@@ -37,15 +40,30 @@ server <- function(input, output, session) {
   output$speciesselect <- renderTree(spll)
   
   specimens <- reactive({
-              if (!input$showallspecs) AcanthAll
+              if (!input$showallspecs | length(get_selected(input$speciesselect,format="names")) == 0) AcanthAll
               else AcanthAll[AcanthAll$species %in% get_selected(input$speciesselect,format="names"),]
             })
                      
   
-  observe({
+  observe( {
     leafletProxy("mymap") %>% clearMarkerClusters() %>%
-                              addMarkers(data = specimens(), label = ~species,
-                                                      clusterOptions = markerClusterOptions())
+                              addMarkers(data = specimens(), label = ~species, 
+                                         icon = ~ icons(
+                                           iconUrl = iconFiles[1],
+                                           popupAnchorX = 20, popupAnchorY = 0
+                                         ),
+                                  clusterOptions = markerClusterOptions(chunkedLoading=TRUE, freezeAtZoom = "maxKeepSpiderfy"))
+  })
+  
+  observeEvent(input$clusterpts, {
+    if (input$clusterpts)
+    {leafletProxy("mymap") %>% clearMarkers() %>%
+        addMarkers(data = specimens(), label = ~species,
+                   clusterOptions = markerClusterOptions())}
+    else
+      leafletProxy("mymap") %>% clearMarkerClusters() %>%
+      addCircleMarkers(data = specimens(), label = ~species)
+                 
   })
   
   output$mymap <- renderLeaflet({
@@ -65,7 +83,7 @@ server <- function(input, output, session) {
 
   })
   
-  output$specieslist <- renderText({
+  output$specieslist <- renderDataTable({
 
     #use the draw_stop event to detect when users finished drawing
     req(input$mymap_draw_stop)
@@ -82,10 +100,10 @@ server <- function(input, output, session) {
       st_crs(drawn_polygon) <- st_crs(AcanthAll)
 
       #use over from the sp package to identify selected AcanthAll
-      selected_features <- st_intersects(AcanthAll , drawn_polygon, sparse=FALSE)
+      selected_features <- st_intersects(specimens() , drawn_polygon, sparse=FALSE)
 
       #print the name of the AcanthAll
-      as.character(as.data.frame(AcanthAll)[selected_features,"species"])
+      data.table(specimens())[selected_features[,1]][order(species),.(.N),by=species]
       
     } else if(feature_type=="circle") {
       #get the coordinates of the center of the cirle
