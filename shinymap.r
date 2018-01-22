@@ -49,10 +49,10 @@ server <- function(input, output, session) {
     leafletProxy("mymap") %>% clearMarkerClusters() %>%
                               addMarkers(data = specimens(), label = ~species, 
                                          icon = ~ icons(
-                                           iconUrl = iconFiles[1],
-                                           popupAnchorX = 20, popupAnchorY = 0
+                                           iconUrl = "C:\\Program Files (x86)\\ArcGIS\\Desktop10.1\\Styles\\KMLIcons\\dot.png",
+                                           popupAnchorX = 0, popupAnchorY = 0
                                          ),
-                                  clusterOptions = markerClusterOptions(chunkedLoading=TRUE, freezeAtZoom = "maxKeepSpiderfy"))
+                                  clusterOptions = markerClusterOptions())
   })
   
   observeEvent(input$clusterpts, {
@@ -62,7 +62,7 @@ server <- function(input, output, session) {
                    clusterOptions = markerClusterOptions())}
     else
       leafletProxy("mymap") %>% clearMarkerClusters() %>%
-      addCircleMarkers(data = specimens(), label = ~species)
+      addCircleMarkers(data = specimens(), label = ~species, radius=5)
                  
   })
   
