@@ -17,21 +17,25 @@ specieslist <- split(speciesnames, speciesnames$genus)
 
 spll <- mapply(function(z){mapply(function(x,y) { y }, z[[2]], z[[3]], SIMPLIFY = FALSE,USE.NAMES = TRUE)},specieslist,USE.NAMES = T)
 
-ui <- fluidPage(
-  titlePanel("Acanthaceae of Africa"),
+ui <- fillPage(
+  # titlePanel("Acanthaceae of Africa"),
   
   sidebarLayout(
     # sidebarPanel(selectInput("selectedspecies", "Species:",specieslist), multiple=TRUE),
-    sidebarPanel(
+    sidebarPanel(width=2,
       checkboxInput("clusterpts", label="Cluster Points", value=TRUE),
       checkboxInput("showallspecs", label="Select taxa", value=FALSE),
       conditionalPanel(condition = "input.showallspecs",
         shinyTree('speciesselect',checkbox = TRUE))
       ),
-    mainPanel(leafletOutput("mymap", width="100%"),
-              dataTableOutput("specieslist")
+    mainPanel(
+      tabsetPanel(
+          tabPanel("Map",
+            leafletOutput("mymap", width="100%", height="700px")),
+          tabPanel("Species List",
+              dataTableOutput("specieslist"))
               )
-    
+    )
   )
 )
 
@@ -47,22 +51,27 @@ server <- function(input, output, session) {
   
   observe( {
     leafletProxy("mymap") %>% clearMarkerClusters() %>%
-                              addMarkers(data = specimens(), label = ~species, 
-                                         icon = ~ icons(
-                                           iconUrl = "C:\\Program Files (x86)\\ArcGIS\\Desktop10.1\\Styles\\KMLIcons\\dot.png",
-                                           popupAnchorX = 0, popupAnchorY = 0
-                                         ),
-                                  clusterOptions = markerClusterOptions())
+                              addCircleMarkers(data = specimens(), label = ~species,
+                                  radius = 1,
+                                  clusterOptions = markerClusterOptions(),
+                                  popup = ~sprintf("<strong>%s</strong><br>%s %s<br>%s<br>%s<br>%s",
+                                                   species,recordedby,recordnumber,eventdate,catalogNumber, rowid
+                                  )
+                                  )
   })
   
   observeEvent(input$clusterpts, {
     if (input$clusterpts)
     {leafletProxy("mymap") %>% clearMarkers() %>%
-        addMarkers(data = specimens(), label = ~species,
-                   clusterOptions = markerClusterOptions())}
-    else
+        addCircleMarkers(data = specimens(), label = ~species, radius=1,
+                   clusterOptions = markerClusterOptions(),
+                   popup = ~sprintf("<strong>%s</strong><br>%s %s<br>%s<br>%s<br>%s",
+                                    species,recordedby,recordnumber,eventdate, catalogNumber ,rowid))}
+    else {
       leafletProxy("mymap") %>% clearMarkerClusters() %>%
-      addCircleMarkers(data = specimens(), label = ~species, radius=5)
+      addCircleMarkers(data = specimens(), label = ~species, radius=1,
+                       popup = ~sprintf("<strong>%s</strong><br>%s %s<br>%s<br>%s<br>%s",
+                                        species,recordedby,recordnumber,eventdate, catalogNumber ,rowid))}
                  
   })
   
@@ -70,7 +79,9 @@ server <- function(input, output, session) {
     
     leaflet(AcanthAll) %>% addTiles() %>% 
       addMarkers(label = ~species,
-                 clusterOptions = markerClusterOptions()) %>%  
+                 clusterOptions = markerClusterOptions(),
+                 popup = ~sprintf("<strong>%s</strong><br>%s %s<br>%s<br>%s<br>%s",
+                                  species,recordedby,recordnumber,eventdate, catalogNumber,rowid)) %>%
       addDrawToolbar(
         targetGroup='select',
         polylineOptions=FALSE,
@@ -87,7 +98,7 @@ server <- function(input, output, session) {
 
     #use the draw_stop event to detect when users finished drawing
     req(input$mymap_draw_stop)
-    print(input$mymap_draw_new_feature)
+    # print(input$mymap_draw_new_feature)
     feature_type <- input$mymap_draw_new_feature$properties$feature_type
 
     if(feature_type %in% c("rectangle","polygon")) {
