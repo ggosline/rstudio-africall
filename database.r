@@ -1,4 +1,4 @@
-library(RPostgreSQL)
+library(RPostgres)
 try(conn <- dbConnect(PostgreSQL(), dbname = "postgis"))
 if (exists("conn") && !inherits(conn, "try-error")) {
   x = st_read_db(conn, "meuse", query = "select * from meuse limit 3;")
@@ -22,8 +22,9 @@ africaupd[upd, ":="(eventdate=i.eventdate, recordedby=collector, recordnumber=co
 
 africaall <- st_sf(africaupd)
 
-con <- dbConnect("PostgreSQL", dbname="Rainbio", port=1433, user="ggosline", password="Uvariops1s", host="kewwta.chh53kepvixq.eu-west-2.rds.amazonaws.com")
+con <- dbConnect(RPostgres::Postgres(), dbname="rainbio", port=1433, user="ggosline", password="Uvariops1s", host="kewwta.chh53kepvixq.eu-west-2.rds.amazonaws.com")
 st_write_db(con, africaall, table="africaall")
 st_write_db(con, africaall, table="africaalln")
-Acanthall <- st_read_db(con, query="Select * from africaalln where Family='Acanthaceae';")
+camspecs <- st_read_db(con, query="Select * from africaall where africaall.\"countryCode\" = 'CMR';")
+Acanthall <- st_read_db(con, query="Select * from africaall where Family='Acanthaceae';")
 dbDisconnect(con)
