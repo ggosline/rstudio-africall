@@ -15,8 +15,8 @@ dbDisconnect(con)
 
 ginspecs <- data.table(ginspecs)
 ginthreat <- ginspecs[IUCN %in% c("CR", "EN", "VU"),]
-
 ginthreat <- st_sf(ginthreat)
+
 tipasSpecst <- st_join(ginthreat, TIPAsB)
 tipasSpecst <- data.table(tipasSpecst)
 tipaThreatSpeciesList <- tipasSpecst[!is.na(NAME),.N,keyby=.(NAME,species,IUCN)]

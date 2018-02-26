@@ -11,86 +11,126 @@ library(data.table)
 #library(mapedit)
 
 
-#AcanthAll <- SpatialPointsDataFrame(AcanthAll[,c("Longitude","Latitude")],AcanthAll)
-speciesnames <- AcanthAll %>% group_by(genus, species) %>% count()
+#specimenlist <- SpatialPointsDataFrame(specimenlist[,c("Longitude","Latitude")],specimenlist)
+specimenlist <- ginthreat
+specimenlist$fIUCN <- factor(specimenlist$IUCN)
+
+speciesnames <- specimenlist %>% group_by(genus, species) %>% count()
 specieslist <- split(speciesnames, speciesnames$genus)
 
 spll <- mapply(function(z){mapply(function(x,y) { y }, z[[2]], z[[3]], SIMPLIFY = FALSE,USE.NAMES = TRUE)},specieslist,USE.NAMES = T)
+specimenpal <- colorFactor("Reds",specimenlist$fIUCN)
 
-ui <- fillPage(
-  # titlePanel("Acanthaceae of Africa"),
-  
-  sidebarLayout(
+ui <- navbarPage("Threatened Species", id="nav",
+
+    tabPanel("Map",
+     div(class="outer", 
+         
+      tags$head(tags$style(type = "text/css", 
+            "div.outer {position: fixed; top: 41px; left: 0; right: 0; bottom: 0; overflow: hidden; padding: 0}
+             #controls {background-color: white;
+               padding: 0 20px 20px 20px;
+               cursor: move;
+               opacity: 0.65;
+               zoom: 0.9;
+               transition: opacity 500ms 1s;}
+             #controls:hover {
+               opacity: 0.95;
+               transition-delay: 0;}" )),  
+         
+      leafletOutput("mymap", height="100%", width="100%"),
+      
     # sidebarPanel(selectInput("selectedspecies", "Species:",specieslist), multiple=TRUE),
-    sidebarPanel(width=2,
-      checkboxInput("clusterpts", label="Cluster Points", value=TRUE),
-      checkboxInput("showallspecs", label="Select taxa", value=FALSE),
-      conditionalPanel(condition = "input.showallspecs",
-        shinyTree('speciesselect',checkbox = TRUE))
-      ),
-    mainPanel(
-      tabsetPanel(
-          tabPanel("Map",
-            leafletOutput("mymap", width="100%", height="700px")),
-          tabPanel("Species List",
+      absolutePanel(id="controls", class = "panel panel-default", 
+                    fixed=TRUE, draggable=TRUE, top = 60, left = "auto", right = 20, bottom="auto",
+                  width = 330, height="auto",  
+        checkboxInput("clusterpts", label="Cluster Points", value=FALSE),
+        checkboxInput("selectspecs", label="Select In Area", value=FALSE),
+        checkboxInput("showallspecs", label="Select taxa", value=FALSE),
+        conditionalPanel(condition = "input.showallspecs", style = "height:600px; overflow-y:scroll;", height="500px", 
+          shinyTree('speciesselect',checkbox = TRUE))
+      ))
+  ),
+            
+    tabPanel("Species List",
               dataTableOutput("specieslist"))
-              )
+              
     )
-  )
-)
+  
+
 
 server <- function(input, output, session) {
   
   output$speciesselect <- renderTree(spll)
   
   specimens <- reactive({
-              if (!input$showallspecs | length(get_selected(input$speciesselect,format="names")) == 0) AcanthAll
-              else AcanthAll[AcanthAll$species %in% get_selected(input$speciesselect,format="names"),]
+              if (!input$showallspecs | length(get_selected(input$speciesselect,format="names")) == 0) specimenlist
+              else specimenlist[specimenlist$species %in% get_selected(input$speciesselect,format="names"),]
             })
-                     
+  
+  clustering <- reactive({
+            if (!input$clusterpts) NULL
+            else markerClusterOptions()
+  })                   
   
   observe( {
-    leafletProxy("mymap") %>% clearMarkerClusters() %>%
+
+    leafletProxy("mymap") %>% clearMarkerClusters() %>% clearMarkers() %>%
                               addCircleMarkers(data = specimens(), label = ~species,
-                                  radius = 1,
-                                  clusterOptions = markerClusterOptions(),
-                                  popup = ~sprintf("<strong>%s</strong><br>%s %s<br>%s<br>%s<br>%s",
-                                                   species,recordedby,recordnumber,eventdate,catalogNumber, rowid
+                                  radius = 2,
+                                  color = ~specimenpal(fIUCN),
+                                  clusterOptions = clustering(),
+                                  popup = ~sprintf("<strong>%s</strong> %s<br>%s %s<br>%s<br>%s<br>%s",
+                                                   species,IUCN,recordedby,recordnumber,eventdate,catalogNumber, rowid
                                   )
                                   )
   })
   
-  observeEvent(input$clusterpts, {
-    if (input$clusterpts)
-    {leafletProxy("mymap") %>% clearMarkers() %>%
-        addCircleMarkers(data = specimens(), label = ~species, radius=1,
-                   clusterOptions = markerClusterOptions(),
-                   popup = ~sprintf("<strong>%s</strong><br>%s %s<br>%s<br>%s<br>%s",
-                                    species,recordedby,recordnumber,eventdate, catalogNumber ,rowid))}
-    else {
-      leafletProxy("mymap") %>% clearMarkerClusters() %>%
-      addCircleMarkers(data = specimens(), label = ~species, radius=1,
-                       popup = ~sprintf("<strong>%s</strong><br>%s %s<br>%s<br>%s<br>%s",
-                                        species,recordedby,recordnumber,eventdate, catalogNumber ,rowid))}
-                 
-  })
-  
-  output$mymap <- renderLeaflet({
-    
-    leaflet(AcanthAll) %>% addTiles() %>% 
-      addMarkers(label = ~species,
-                 clusterOptions = markerClusterOptions(),
-                 popup = ~sprintf("<strong>%s</strong><br>%s %s<br>%s<br>%s<br>%s",
-                                  species,recordedby,recordnumber,eventdate, catalogNumber,rowid)) %>%
+  observeEvent(input$selectspecs,  {
+    if (input$selectspecs) {
+      leafletProxy("mymap") %>% 
       addDrawToolbar(
         targetGroup='select',
         polylineOptions=FALSE,
         markerOptions = FALSE,
-        circleOptions = TRUE,
-        singleFeature = TRUE) %>%
+        circleOptions = FALSE,
+        singleFeature = TRUE,
+        editOptions = editToolbarOptions(selectedPathOptions = selectedPathOptions()) )}
+    else {leafletProxy("mymap") %>% removeDrawToolbar(clearFeatures = TRUE )}
+  })  
+    
+
+  
+  # observeEvent(input$clusterpts, {
+  #   if (input$clusterpts)
+  #   {leafletProxy("mymap") %>% clearMarkers() %>%
+  #       addCircleMarkers(data = specimens(), label = ~species, radius=2,
+  #                  clusterOptions = markerClusterOptions(),
+  #                  popup = ~sprintf("<strong>%s</strong> %s<br>%s %s<br>%s<br>%s<br>%s",
+  #                                   species,IUCN,recordedby,recordnumber,eventdate, catalogNumber ,rowid))}
+  #   else {
+  #     leafletProxy("mymap") %>% clearMarkerClusters() %>%
+  #     addCircleMarkers(data = specimens(), label = ~species, radius=2,
+  #                      color = ~specimenpal(fIUCN),
+  #                      popup = ~sprintf("<strong>%s</strong> %s<br>%s %s<br>%s<br>%s<br>%s",
+  #                                       species,IUCN,recordedby,recordnumber,eventdate, catalogNumber ,rowid))}
+  #                
+  # })
+  
+  output$mymap <- renderLeaflet({
+    
+    leaflet(specimenlist) %>% addTiles() %>%
       
-    addLayersControl(overlayGroups = c('select'), options =
-                       layersControlOptions(collapsed=FALSE)) 
+      addPolygons(data=GuineaTIPAs) %>%
+      
+      addMarkers(label = ~species,
+                 clusterOptions = markerClusterOptions(),
+                 popup = ~sprintf("<strong>%s</strong> %s<br>%s %s<br>%s<br>%s<br>%s",
+                                  species,IUCN,recordedby,recordnumber,eventdate, catalogNumber,rowid)) # %>%
+      
+      
+      # addLayersControl(overlayGroups = c('select'), options =
+      #                  layersControlOptions(collapsed=FALSE)) 
 
   })
   
@@ -108,23 +148,23 @@ server <- function(input, output, session) {
 
       #transform them to an sf Polygon
       drawn_polygon <- st_sf(1, st_sfc(st_polygon(list(matrix(unlist(polygon_coordinates),ncol=2,byrow=TRUE)))))
-      st_crs(drawn_polygon) <- st_crs(AcanthAll)
+      st_crs(drawn_polygon) <- st_crs(specimenlist)
 
-      #use over from the sp package to identify selected AcanthAll
+      #use over from the sp package to identify selected specimenlist
       selected_features <- st_intersects(specimens() , drawn_polygon, sparse=FALSE)
 
-      #print the name of the AcanthAll
+      #print the name of the specimenlist
       data.table(specimens())[selected_features[,1]][order(species),.(.N),by=species]
       
-    } else if(feature_type=="circle") {
-      #get the coordinates of the center of the cirle
-      center_coords <- matrix(c(input$mymap_draw_new_feature$geometry$coordinates[[1]],input$mymap_draw_new_feature$geometry$coordinates[[2]]),ncol=2)
-
-      #calculate the distance of the AcanthAll to the center
-      dist_to_center <- spDistsN1(AcanthAll,longlat=TRUE)
-
-      #select the AcanthAll that are closer to the center than the radius of the circle
-      as.character(AcanthAll[dist_to_center < input$mymap_draw_new_feature$properties$radius/1000,"AccentCity"])
+    # } else if(feature_type=="circle") {
+    #   #get the coordinates of the center of the cirle
+    #   center_coords <- matrix(c(input$mymap_draw_new_feature$geometry$coordinates[[1]],input$mymap_draw_new_feature$geometry$coordinates[[2]]),ncol=2)
+    # 
+    #   #calculate the distance of the specimenlist to the center
+    #   dist_to_center <- spDistsN1(specimenlist,longlat=TRUE)
+    # 
+    #   #select the specimenlist that are closer to the center than the radius of the circle
+    #   as.character(specimenlist[dist_to_center < input$mymap_draw_new_feature$properties$radius/1000,"AccentCity"])
     }
     
     
