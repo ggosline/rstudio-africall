@@ -4,15 +4,19 @@ library(leaflet)
 library(leaflet.extras)
 library(shinyTree)
 library(sf)
-library(sp)
+#library(sp)
+library(RPostgres)
 library(dplyr)
 library(DT)
 library(data.table)
 #library(mapedit)
 
+# specimenlist <- readRDS("ginthreat.rds")
+# specimenlist <- ginspecs
 
-#specimenlist <- SpatialPointsDataFrame(specimenlist[,c("Longitude","Latitude")],specimenlist)
-specimenlist <- ginthreat
+GuineaTIPAs <- readRDS("guineatipas.rds")
+
+specimenlist <- ginspecs
 specimenlist$fIUCN <- factor(specimenlist$IUCN)
 
 speciesnames <- specimenlist %>% group_by(genus, species) %>% count()
@@ -43,9 +47,11 @@ ui <- navbarPage("Threatened Species", id="nav",
     # sidebarPanel(selectInput("selectedspecies", "Species:",specieslist), multiple=TRUE),
       absolutePanel(id="controls", class = "panel panel-default", 
                     fixed=TRUE, draggable=TRUE, top = 60, left = "auto", right = 20, bottom="auto",
-                  width = 330, height="auto",  
-        checkboxInput("clusterpts", label="Cluster Points", value=FALSE),
+                  width = 330, height="auto", 
+                  
+        checkboxInput("threatenedonly", label="Threatened Only", value=TRUE),
         checkboxInput("selectspecs", label="Select In Area", value=FALSE),
+        checkboxInput("clusterpts", label="Cluster Points", value=FALSE),
         checkboxInput("showallspecs", label="Select taxa", value=FALSE),
         conditionalPanel(condition = "input.showallspecs", style = "height:600px; overflow-y:scroll;", height="500px", 
           shinyTree('speciesselect',checkbox = TRUE))
@@ -77,7 +83,7 @@ server <- function(input, output, session) {
 
     leafletProxy("mymap") %>% clearMarkerClusters() %>% clearMarkers() %>%
                               addCircleMarkers(data = specimens(), label = ~species,
-                                  radius = 2,
+                                  radius = 3,
                                   color = ~specimenpal(fIUCN),
                                   clusterOptions = clustering(),
                                   popup = ~sprintf("<strong>%s</strong> %s<br>%s %s<br>%s<br>%s<br>%s",
@@ -85,6 +91,11 @@ server <- function(input, output, session) {
                                   )
                                   )
   })
+  
+  observeEvent(input$threatenedonly,  {
+    if (input$threatenedonly) {specimenlist <- ginspecs[ginspecs$IUCN %in% c("CR","EN","VU"),]}
+    else {specimenlist <- ginspecs}
+               })
   
   observeEvent(input$selectspecs,  {
     if (input$selectspecs) {
@@ -99,39 +110,22 @@ server <- function(input, output, session) {
     else {leafletProxy("mymap") %>% removeDrawToolbar(clearFeatures = TRUE )}
   })  
     
-
-  
-  # observeEvent(input$clusterpts, {
-  #   if (input$clusterpts)
-  #   {leafletProxy("mymap") %>% clearMarkers() %>%
-  #       addCircleMarkers(data = specimens(), label = ~species, radius=2,
-  #                  clusterOptions = markerClusterOptions(),
-  #                  popup = ~sprintf("<strong>%s</strong> %s<br>%s %s<br>%s<br>%s<br>%s",
-  #                                   species,IUCN,recordedby,recordnumber,eventdate, catalogNumber ,rowid))}
-  #   else {
-  #     leafletProxy("mymap") %>% clearMarkerClusters() %>%
-  #     addCircleMarkers(data = specimens(), label = ~species, radius=2,
-  #                      color = ~specimenpal(fIUCN),
-  #                      popup = ~sprintf("<strong>%s</strong> %s<br>%s %s<br>%s<br>%s<br>%s",
-  #                                       species,IUCN,recordedby,recordnumber,eventdate, catalogNumber ,rowid))}
-  #                
-  # })
   
   output$mymap <- renderLeaflet({
     
-    leaflet(specimenlist) %>% addTiles() %>%
+    leaflet(specimenlist) %>% 
+      # Base groups
+      addProviderTiles(providers$OpenStreetMap, group = "OSM") %>%
+      addProviderTiles(providers$Esri.WorldImagery, group = "Imagery") %>%
+      addProviderTiles(providers$Esri.NatGeoWorldMap, group = "NatGeo") %>%
+      addProviderTiles(providers$OpenTopoMap, group = "OpenTopo") %>%
       
-      addPolygons(data=GuineaTIPAs) %>%
+      addLayersControl(
+        baseGroups = c("OSM", "Imagery", "NatGeo", "OpenTopo"),
+        options = layersControlOptions(collapsed = TRUE)) %>%
+        
+      addPolygons(data=GuineaTIPAs) # %>%
       
-      addMarkers(label = ~species,
-                 clusterOptions = markerClusterOptions(),
-                 popup = ~sprintf("<strong>%s</strong> %s<br>%s %s<br>%s<br>%s<br>%s",
-                                  species,IUCN,recordedby,recordnumber,eventdate, catalogNumber,rowid)) # %>%
-      
-      
-      # addLayersControl(overlayGroups = c('select'), options =
-      #                  layersControlOptions(collapsed=FALSE)) 
-
   })
   
   output$specieslist <- renderDataTable({
@@ -154,7 +148,7 @@ server <- function(input, output, session) {
       selected_features <- st_intersects(specimens() , drawn_polygon, sparse=FALSE)
 
       #print the name of the specimenlist
-      data.table(specimens())[selected_features[,1]][order(species),.(.N),by=species]
+      data.table(specimens())[selected_features[,1]][order(species),.(.N),by=.(species, IUCN)]
       
     # } else if(feature_type=="circle") {
     #   #get the coordinates of the center of the cirle
