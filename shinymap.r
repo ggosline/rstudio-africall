@@ -5,25 +5,39 @@ library(leaflet.extras)
 library(shinyTree)
 library(sf)
 #library(sp)
+library(pool)
 library(RPostgres)
+library(DBI)
 library(dplyr)
 library(DT)
 library(data.table)
-#library(mapedit)
+
+#library(mapview)
 
 # specimenlist <- readRDS("ginthreat.rds")
 # specimenlist <- ginspecs
 
+#browser()
+
 GuineaTIPAs <- readRDS("guineatipas.rds")
 
-specimenlist <- ginspecs
-specimenlist$fIUCN <- factor(specimenlist$IUCN)
+pool <- dbConnect(drv=RPostgres::Postgres(), dbname="rainbio", port=1433, user="ggosline", password="Uvariops1s", host="kewwta.chh53kepvixq.eu-west-2.rds.amazonaws.com")
 
-speciesnames <- specimenlist %>% group_by(genus, species) %>% count()
+sql <- "Select * from africaall where africaall.\"countryCode\" = ?country;"
+query <- sqlInterpolate(pool, sql, country='GIN')
+ginspecs <- st_read_db(pool, query=query)
+
+ginspecs$fIUCN <- factor(ginspecs$IUCN)
+ginthreat <- ginspecs[ginspecs$IUCN %in% c("CR", "EN", "VU"),]
+
+dbDisconnect(pool)
+
+speciesnames <- data.table(ginspecs[,c("genus","species"),drop=TRUE]) %>% group_by(genus, species) %>% count()
 specieslist <- split(speciesnames, speciesnames$genus)
 
 spll <- mapply(function(z){mapply(function(x,y) { y }, z[[2]], z[[3]], SIMPLIFY = FALSE,USE.NAMES = TRUE)},specieslist,USE.NAMES = T)
-specimenpal <- colorFactor("Reds",specimenlist$fIUCN)
+
+specimenpal <- colorFactor("Reds", levels(ginspecs$fIUCN))
 
 ui <- navbarPage("Threatened Species", id="nav",
 
@@ -67,11 +81,13 @@ ui <- navbarPage("Threatened Species", id="nav",
 
 server <- function(input, output, session) {
   
+  specimenlist <- reactiveVal(ginthreat)
+  
   output$speciesselect <- renderTree(spll)
   
   specimens <- reactive({
-              if (!input$showallspecs | length(get_selected(input$speciesselect,format="names")) == 0) specimenlist
-              else specimenlist[specimenlist$species %in% get_selected(input$speciesselect,format="names"),]
+              if (!input$showallspecs | length(get_selected(input$speciesselect,format="names")) == 0) specimenlist()
+              else specimenlist()[specimenlist()$species %in% get_selected(input$speciesselect,format="names"),]
             })
   
   clustering <- reactive({
@@ -92,9 +108,9 @@ server <- function(input, output, session) {
                                   )
   })
   
-  observeEvent(input$threatenedonly,  {
-    if (input$threatenedonly) {specimenlist <- ginspecs[ginspecs$IUCN %in% c("CR","EN","VU"),]}
-    else {specimenlist <- ginspecs}
+  observeEvent(input$threatenedonly,  { 
+    if (input$threatenedonly)  specimenlist(ginthreat) 
+    else   specimenlist(ginspecs)
                })
   
   observeEvent(input$selectspecs,  {
@@ -113,7 +129,7 @@ server <- function(input, output, session) {
   
   output$mymap <- renderLeaflet({
     
-    leaflet(specimenlist) %>% 
+    leaflet(options=leafletOptions(CANVAS=TRUE)) %>% 
       # Base groups
       addProviderTiles(providers$OpenStreetMap, group = "OSM") %>%
       addProviderTiles(providers$Esri.WorldImagery, group = "Imagery") %>%
@@ -142,7 +158,7 @@ server <- function(input, output, session) {
 
       #transform them to an sf Polygon
       drawn_polygon <- st_sf(1, st_sfc(st_polygon(list(matrix(unlist(polygon_coordinates),ncol=2,byrow=TRUE)))))
-      st_crs(drawn_polygon) <- st_crs(specimenlist)
+      st_crs(drawn_polygon) <- st_crs(ginspecs)
 
       #use over from the sp package to identify selected specimenlist
       selected_features <- st_intersects(specimens() , drawn_polygon, sparse=FALSE)
