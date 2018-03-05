@@ -12,7 +12,7 @@ library(dplyr)
 library(DT)
 library(data.table)
 
-#library(mapview)
+library(mapview)
 
 # specimenlist <- readRDS("ginthreat.rds")
 # specimenlist <- ginspecs
@@ -45,7 +45,7 @@ ui <- navbarPage("Threatened Species", id="nav",
      div(class="outer", 
          
       tags$head(tags$style(type = "text/css", 
-            "div.outer {position: fixed; top: 41px; left: 0; right: 0; bottom: 0; overflow: hidden; padding: 0}
+            "div.outer {position: fixed; top: 56px; left: 0; right: 0; bottom: 0; overflow: hidden; padding: 0}
              #controls {background-color: white;
                padding: 0 20px 20px 20px;
                cursor: move;
@@ -139,7 +139,7 @@ server <- function(input, output, session) {
       addLayersControl(
         baseGroups = c("OSM", "Imagery", "NatGeo", "OpenTopo"),
         options = layersControlOptions(collapsed = TRUE)) %>%
-        
+      addMouseCoordinates(style="basic")  %>%
       addPolygons(data=GuineaTIPAs) # %>%
       
   })
