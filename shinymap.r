@@ -32,10 +32,15 @@ ginthreat <- ginspecs[ginspecs$IUCN %in% c("CR", "EN", "VU"),]
 
 dbDisconnect(pool)
 
-speciesnames <- data.table(ginspecs[,c("genus","species"),drop=TRUE]) %>% group_by(genus, species) %>% count()
-specieslist <- split(speciesnames, speciesnames$genus)
+# speciesnames <- data.table(ginspecs[,c("family", "genus","species","IUCN"),drop=TRUE]) %>% group_by(family, genus, species) %>% count()
+# specieslist <- split(speciesnames, speciesnames$genus)
+# 
+# spll <- mapply(function(z){mapply(function(x,y) { y }, z[[2]], z[[3]], SIMPLIFY = FALSE,USE.NAMES = TRUE)},specieslist,USE.NAMES = T)
 
-spll <- mapply(function(z){mapply(function(x,y) { y }, z[[2]], z[[3]], SIMPLIFY = FALSE,USE.NAMES = TRUE)},specieslist,USE.NAMES = T)
+speciesnames <- data.table(ginspecs,drop=TRUE)[,.(IUCN=max(IUCN),.N),by=list(family,genus,species)]
+specieslist <- split(speciesnames,by=c("family","genus"),sorted=TRUE,flatten=FALSE)
+
+spll <- mapply(function(z1){mapply(function(z){mapply(function(y) { y }, z$species,SIMPLIFY = FALSE)},z1,SIMPLIFY=FALSE)},specieslist,USE.NAMES = TRUE, SIMPLIFY=FALSE)
 
 specimenpal <- colorFactor("Reds", levels(ginspecs$fIUCN))
 
@@ -73,7 +78,8 @@ ui <- navbarPage("Threatened Species", id="nav",
   ),
             
     tabPanel("Species List",
-              dataTableOutput("specieslist"))
+            downloadButton("downloadspecieslist", label="Download"),
+            DT::dataTableOutput("specieslist"))
               
     )
   
@@ -82,6 +88,8 @@ ui <- navbarPage("Threatened Species", id="nav",
 server <- function(input, output, session) {
   
   specimenlist <- reactiveVal(ginthreat)
+  
+  speciesselection <- reactiveVal()
   
   output$speciesselect <- renderTree(spll)
   
@@ -135,7 +143,7 @@ server <- function(input, output, session) {
       addProviderTiles(providers$Esri.WorldImagery, group = "Imagery") %>%
       addProviderTiles(providers$Esri.NatGeoWorldMap, group = "NatGeo") %>%
       addProviderTiles(providers$OpenTopoMap, group = "OpenTopo") %>%
-      
+      addScaleBar('bottomleft') %>%
       addLayersControl(
         baseGroups = c("OSM", "Imagery", "NatGeo", "OpenTopo"),
         options = layersControlOptions(collapsed = TRUE)) %>%
@@ -144,7 +152,15 @@ server <- function(input, output, session) {
       
   })
   
-  output$specieslist <- renderDataTable({
+  output$downloadspecieslist <- downloadHandler(
+    filename = function() {
+         paste('selectedspecies', Sys.Date(), '.csv', sep='')
+       },
+       content = function(con) {
+         write.csv(speciesselection(), con)
+       })
+  
+  output$specieslist <- DT::renderDataTable({
 
     #use the draw_stop event to detect when users finished drawing
     req(input$mymap_draw_stop)
@@ -164,7 +180,9 @@ server <- function(input, output, session) {
       selected_features <- st_intersects(specimens() , drawn_polygon, sparse=FALSE)
 
       #print the name of the specimenlist
-      data.table(specimens())[selected_features[,1]][order(species),.(.N),by=.(species, IUCN)]
+      speciesselection(data.table(specimens())[selected_features[,1]][order(family, species),.(.N),by=.(family, species, IUCN)])
+      datatable( speciesselection(),
+                options=list(pageLength=25))
       
     # } else if(feature_type=="circle") {
     #   #get the coordinates of the center of the cirle
