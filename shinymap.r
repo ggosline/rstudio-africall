@@ -5,7 +5,7 @@ library(leaflet.extras)
 library(shinyTree)
 library(sf)
 #library(sp)
-library(pool)
+#library(pool)
 library(RPostgres)
 library(DBI)
 library(dplyr)
@@ -38,10 +38,13 @@ dbDisconnect(pool)
 # spll <- mapply(function(z){mapply(function(x,y) { y }, z[[2]], z[[3]], SIMPLIFY = FALSE,USE.NAMES = TRUE)},specieslist,USE.NAMES = T)
 
 speciesnames <- data.table(ginspecs,drop=TRUE)[,.(IUCN=max(IUCN),.N),by=list(family,genus,species)]
+threatenednames <- data.table(ginthreat,drop=TRUE)[,.(IUCN=max(IUCN),.N),by=list(family,genus,species)]
 specieslist <- split(speciesnames,by=c("family","genus"),sorted=TRUE,flatten=FALSE)
+threatenedlist <- split(threatenednames,by=c("family","genus"),sorted=TRUE,flatten=FALSE)
 
 spll <- mapply(function(z1){mapply(function(z){mapply(function(y) { y }, z$species,SIMPLIFY = FALSE)},z1,SIMPLIFY=FALSE)},specieslist,USE.NAMES = TRUE, SIMPLIFY=FALSE)
-
+threatl <- mapply(function(z1){mapply(function(z){mapply(function(y) { y }, z$species,SIMPLIFY = FALSE)},z1,SIMPLIFY=FALSE)},threatenedlist,USE.NAMES = TRUE, SIMPLIFY=FALSE)
+  
 specimenpal <- colorFactor("Reds", levels(ginspecs$fIUCN))
 
 ui <- navbarPage("Threatened Species", id="nav",
@@ -95,7 +98,10 @@ server <- function(input, output, session) {
   
   specimens <- reactive({
               if (!input$showallspecs | length(get_selected(input$speciesselect,format="names")) == 0) specimenlist()
-              else specimenlist()[specimenlist()$species %in% get_selected(input$speciesselect,format="names"),]
+              else {taxa <- get_selected(input$speciesselect,format="names")
+                    spl <- specimenlist()
+                    spl <- spl[spl$species %in% taxa,]
+                    spl}
             })
   
   clustering <- reactive({
@@ -105,21 +111,25 @@ server <- function(input, output, session) {
   
   observe( {
 
-    leafletProxy("mymap") %>% clearMarkerClusters() %>% clearMarkers() %>%
-                              addCircleMarkers(data = specimens(), label = ~species,
-                                  radius = 3,
-                                  color = ~specimenpal(fIUCN),
-                                  clusterOptions = clustering(),
-                                  popup = ~sprintf("<strong>%s</strong> %s<br>%s %s<br>%s<br>%s<br>%s",
-                                                   species,IUCN,recordedby,recordnumber,eventdate,catalogNumber, rowid
-                                  )
-                                  )
-  })
+    leafletProxy("mymap") %>% 
+      clearMarkerClusters() %>% 
+      clearMarkers() %>%
+      addCircleMarkers(data = specimens(), label = ~species,
+                              radius = 3,
+                              color = ~specimenpal(fIUCN),
+                              clusterOptions = clustering(),
+                              popup = ~sprintf("<strong>%s</strong> %s<br>%s %s<br>%s<br>%s<br>%s",
+                                                   species,IUCN,recordedby,recordnumber,eventdate,catalogNumber, rowid)
+                       )
+    })
   
   observeEvent(input$threatenedonly,  { 
-    if (input$threatenedonly)  specimenlist(ginthreat) 
-    else   specimenlist(ginspecs)
-               })
+    if (input$threatenedonly)  {specimenlist(ginthreat)
+      output$speciesselect <- renderTree(threatl)}
+       
+    else   {specimenlist(ginspecs)
+      output$speciesselect <- renderTree(spll)}
+    })
   
   observeEvent(input$selectspecs,  {
     if (input$selectspecs) {
